@@ -1,0 +1,5 @@
+# BEGIN oh-my-exegol
+if [[ -f /opt/my-resources/setup/zsh/oh-my-exegol.zsh ]]; then
+  source /opt/my-resources/setup/zsh/oh-my-exegol.zsh
+fi
+# END oh-my-exegol
