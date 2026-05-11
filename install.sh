@@ -9,8 +9,6 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 MARKER_BEGIN="# BEGIN oh-my-exegol"
 MARKER_END="# END oh-my-exegol"
-LEGACY_ZELLIJ_MARKER_BEGIN="# BEGIN exegol-zellij-template"
-LEGACY_ZELLIJ_MARKER_END="# END exegol-zellij-template"
 LEGACY_SYSTEM_UPDATE_MARKER_BEGIN="# BEGIN exegol-system-update-template"
 LEGACY_SYSTEM_UPDATE_MARKER_END="# END exegol-system-update-template"
 
@@ -328,7 +326,6 @@ done
 
 TARGET_MY_RESOURCES="$(detect_my_resources_path)"
 TARGET_SETUP_DIR="$TARGET_MY_RESOURCES/setup"
-TARGET_ZELLIJ_DIR="$TARGET_SETUP_DIR/zellij"
 TARGET_ZSH_DIR="$TARGET_SETUP_DIR/zsh"
 
 LOAD_USER_SETUP_BLOCK="$(cat <<'EOF'
@@ -355,8 +352,6 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
 
   remove_marker_block "$TARGET_SETUP_DIR/load_user_setup.sh"
   remove_marker_block "$TARGET_ZSH_DIR/zshrc"
-  remove_marker_block_if_present "$TARGET_SETUP_DIR/load_user_setup.sh" "$LEGACY_ZELLIJ_MARKER_BEGIN" "$LEGACY_ZELLIJ_MARKER_END"
-  remove_marker_block_if_present "$TARGET_ZSH_DIR/zshrc" "$LEGACY_ZELLIJ_MARKER_BEGIN" "$LEGACY_ZELLIJ_MARKER_END"
   remove_marker_block_if_present "$TARGET_ZSH_DIR/zshrc" "$LEGACY_SYSTEM_UPDATE_MARKER_BEGIN" "$LEGACY_SYSTEM_UPDATE_MARKER_END"
   remove_legacy_system_update_load_user_if_owned "$TARGET_SETUP_DIR/load_user_setup.sh"
 
@@ -364,14 +359,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   remove_owned_backup_files "$TARGET_ZSH_DIR/oh-my-exegol.zsh"
   remove_owned_file_if_exists "$TARGET_ZSH_DIR/system-update-prompt.zsh"
   remove_owned_backup_files "$TARGET_ZSH_DIR/system-update-prompt.zsh"
-  remove_owned_file_if_exists "$TARGET_ZSH_DIR/exegol-zellij-autostart.zsh"
-  remove_owned_backup_files "$TARGET_ZSH_DIR/exegol-zellij-autostart.zsh"
-  remove_owned_file_if_exists "$TARGET_ZELLIJ_DIR/load_user_setup.sh"
-  remove_owned_backup_files "$TARGET_ZELLIJ_DIR/load_user_setup.sh"
-  remove_owned_file_if_exists "$TARGET_ZELLIJ_DIR/config.kdl"
-  remove_owned_backup_files "$TARGET_ZELLIJ_DIR/config.kdl"
 
-  remove_dir_if_empty "$TARGET_ZELLIJ_DIR"
   remove_dir_if_empty "$TARGET_ZSH_DIR"
   remove_dir_if_empty "$TARGET_SETUP_DIR"
 
@@ -387,23 +375,17 @@ mkdir -p "$TARGET_ZSH_DIR"
 copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/oh-my-exegol.zsh" "$TARGET_ZSH_DIR/oh-my-exegol.zsh" 1 0
 remove_marker_block_if_present "$TARGET_ZSH_DIR/zshrc" "$LEGACY_SYSTEM_UPDATE_MARKER_BEGIN" "$LEGACY_SYSTEM_UPDATE_MARKER_END"
 remove_owned_file_if_exists "$TARGET_ZSH_DIR/system-update-prompt.zsh"
-remove_owned_file_if_exists "$TARGET_ZSH_DIR/exegol-zellij-autostart.zsh"
-remove_owned_file_if_exists "$TARGET_ZELLIJ_DIR/load_user_setup.sh"
-remove_owned_file_if_exists "$TARGET_ZELLIJ_DIR/config.kdl"
-remove_dir_if_empty "$TARGET_ZELLIJ_DIR"
 
 if [[ -f "$TARGET_SETUP_DIR/load_user_setup.sh" ]]; then
   remove_legacy_system_update_load_user_if_owned "$TARGET_SETUP_DIR/load_user_setup.sh"
 fi
 
 if [[ -f "$TARGET_SETUP_DIR/load_user_setup.sh" ]]; then
-  remove_marker_block_if_present "$TARGET_SETUP_DIR/load_user_setup.sh" "$LEGACY_ZELLIJ_MARKER_BEGIN" "$LEGACY_ZELLIJ_MARKER_END"
   ensure_marker_block "$TARGET_SETUP_DIR/load_user_setup.sh" "$LOAD_USER_SETUP_BLOCK"
 else
   copy_if_missing_or_force "$SOURCE_SETUP_DIR/load_user_setup.sh" "$TARGET_SETUP_DIR/load_user_setup.sh" 1
 fi
 
-remove_marker_block_if_present "$TARGET_ZSH_DIR/zshrc" "$LEGACY_ZELLIJ_MARKER_BEGIN" "$LEGACY_ZELLIJ_MARKER_END"
 ensure_marker_block "$TARGET_ZSH_DIR/zshrc" "$ZSHRC_BLOCK"
 
 ensure_executable_if_possible "$TARGET_SETUP_DIR/load_user_setup.sh"
