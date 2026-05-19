@@ -125,6 +125,10 @@ _oh_my_exegol_apt_upgrade() {
     -y upgrade
 }
 
+_oh_my_exegol_msf_update() {
+  msfupdate
+}
+
 _oh_my_exegol_prompt_important_tools_update() {
   local reply=""
   local update_failed=0
@@ -139,7 +143,7 @@ _oh_my_exegol_prompt_important_tools_update() {
 
   mkdir -p "$_oh_my_exegol_state_dir"
 
-  printf "%s[?]%s Update important tools now? This will run apt-get update/upgrade, update pip and update NetExec. %s[y/N]%s " "$_oh_my_exegol_color_blue" "$_oh_my_exegol_color_reset" "$_oh_my_exegol_color_yellow" "$_oh_my_exegol_color_reset"
+  printf "%s[?]%s Update important tools now? This will run apt update/upgrade, update pip and update NetExec. %s[y/N]%s " "$_oh_my_exegol_color_blue" "$_oh_my_exegol_color_reset" "$_oh_my_exegol_color_yellow" "$_oh_my_exegol_color_reset"
   read -r reply
 
   case "$reply" in
@@ -155,8 +159,8 @@ _oh_my_exegol_prompt_important_tools_update() {
           update_failed=1
         fi
       else
-        _oh_my_exegol_log_warn "apt-get is not available, skipping apt update"
-        _oh_my_exegol_log_to_file "apt-get is not available, skipping apt update"
+        _oh_my_exegol_log_warn "apt is not available, skipping apt update"
+        _oh_my_exegol_log_to_file "apt is not available, skipping apt update"
       fi
 
       if command -v apt-get >/dev/null 2>&1; then
@@ -164,8 +168,8 @@ _oh_my_exegol_prompt_important_tools_update() {
           update_failed=1
         fi
       else
-        _oh_my_exegol_log_warn "apt-get is not available, skipping apt upgrade"
-        _oh_my_exegol_log_to_file "apt-get is not available, skipping apt upgrade"
+        _oh_my_exegol_log_warn "apt is not available, skipping apt upgrade"
+        _oh_my_exegol_log_to_file "apt is not available, skipping apt upgrade"
       fi
 
       if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
@@ -193,6 +197,15 @@ _oh_my_exegol_prompt_important_tools_update() {
         if ! _oh_my_exegol_run_with_spinner "NetExec update" _oh_my_exegol_update_netexec; then
           update_failed=1
         fi
+      fi
+
+      if /opt/tools/metasploit-framework/msfupdate --help >/dev/null 2>&1; then
+        if ! _oh_my_exegol_run_with_spinner "msfupdate" _oh_my_exegol_msf_update; then
+          update_failed=1
+        fi
+      else
+        _oh_my_exegol_log_warn "msfupdate is not available, skipping msfupdate"
+        _oh_my_exegol_log_to_file "msfupdate is not available, skipping msfupdate"
       fi
 
       if [[ "$update_failed" -eq 0 ]]; then
