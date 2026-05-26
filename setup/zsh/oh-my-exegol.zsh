@@ -4,6 +4,7 @@ _oh_my_exegol_prompt_file="${_oh_my_exegol_state_dir}/prompt-important-tool-upda
 _oh_my_exegol_choice_file="${_oh_my_exegol_state_dir}/important-tool-updates.choice"
 _oh_my_exegol_log_file="${_oh_my_exegol_state_dir}/important-tool-updates.log"
 _oh_my_exegol_netexec_dir="/opt/tools/NetExec"
+_oh_my_exegol_update_choice_asked=0
 
 if [[ -t 1 ]]; then
   _oh_my_exegol_color_blue=$'\033[1;34m'
@@ -129,9 +130,8 @@ _oh_my_exegol_msf_update() {
   msfupdate
 }
 
-_oh_my_exegol_prompt_important_tools_update() {
+_oh_my_exegol_prompt_important_tools_update_choice() {
   local reply=""
-  local update_failed=0
 
   if [[ ! -o interactive || ! -t 0 || ! -t 1 ]]; then
     return
@@ -142,6 +142,7 @@ _oh_my_exegol_prompt_important_tools_update() {
   fi
 
   mkdir -p "$_oh_my_exegol_state_dir"
+  _oh_my_exegol_update_choice_asked=1
 
   printf "%s[?]%s Update important tools now? This will run apt update/upgrade, update pip and update NetExec. %s[y/N]%s " "$_oh_my_exegol_color_blue" "$_oh_my_exegol_color_reset" "$_oh_my_exegol_color_yellow" "$_oh_my_exegol_color_reset"
   read -r reply
@@ -149,95 +150,125 @@ _oh_my_exegol_prompt_important_tools_update() {
   case "$reply" in
     [Yy]|[Yy][Ee][Ss])
       printf "yes\n" > "$_oh_my_exegol_choice_file"
-      : > "$_oh_my_exegol_log_file"
-
-      _oh_my_exegol_log_info "Important tools update output will be saved to $_oh_my_exegol_log_file"
-      _oh_my_exegol_log_to_file "Important tools update output"
-
-      if command -v apt-get >/dev/null 2>&1; then
-        if ! _oh_my_exegol_run_with_spinner "apt update" _oh_my_exegol_apt_update; then
-          update_failed=1
-        fi
-      else
-        _oh_my_exegol_log_warn "apt is not available, skipping apt update"
-        _oh_my_exegol_log_to_file "apt is not available, skipping apt update"
-      fi
-
-      if command -v apt-get >/dev/null 2>&1; then
-        if ! _oh_my_exegol_run_with_spinner "apt upgrade" _oh_my_exegol_apt_upgrade; then
-          update_failed=1
-        fi
-      else
-        _oh_my_exegol_log_warn "apt is not available, skipping apt upgrade"
-        _oh_my_exegol_log_to_file "apt is not available, skipping apt upgrade"
-      fi
-
-      if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
-        if ! _oh_my_exegol_run_with_spinner "pip update" _oh_my_exegol_update_pip; then
-          update_failed=1
-        fi
-      else
-        _oh_my_exegol_log_warn "python3 pip is not available, skipping pip update"
-        _oh_my_exegol_log_to_file "python3 pip is not available, skipping pip update"
-      fi
-
-      if [[ ! -d "$_oh_my_exegol_netexec_dir" ]]; then
-        update_failed=1
-        _oh_my_exegol_log_error "NetExec directory not found: $_oh_my_exegol_netexec_dir"
-        _oh_my_exegol_log_to_file "NetExec directory not found: $_oh_my_exegol_netexec_dir"
-      elif ! command -v git >/dev/null 2>&1; then
-        update_failed=1
-        _oh_my_exegol_log_error "git is not available, cannot update NetExec"
-        _oh_my_exegol_log_to_file "git is not available, cannot update NetExec"
-      elif ! command -v pipx >/dev/null 2>&1; then
-        update_failed=1
-        _oh_my_exegol_log_error "pipx is not available, cannot update NetExec"
-        _oh_my_exegol_log_to_file "pipx is not available, cannot update NetExec"
-      else
-        if ! _oh_my_exegol_run_with_spinner "NetExec update" _oh_my_exegol_update_netexec; then
-          update_failed=1
-        fi
-      fi
-
-      if /opt/tools/metasploit-framework/msfupdate --help >/dev/null 2>&1; then
-        if ! _oh_my_exegol_run_with_spinner "msfupdate" _oh_my_exegol_msf_update; then
-          update_failed=1
-        fi
-      else
-        _oh_my_exegol_log_warn "msfupdate is not available, skipping msfupdate"
-        _oh_my_exegol_log_to_file "msfupdate is not available, skipping msfupdate"
-      fi
-
-      if [[ "$update_failed" -eq 0 ]]; then
-        _oh_my_exegol_log_success "Important tools update finished successfully"
-        _oh_my_exegol_log_to_file "Important tools update finished successfully"
-      else
-        _oh_my_exegol_log_error "Important tools update finished with errors"
-        _oh_my_exegol_log_to_file "Important tools update finished with errors"
-      fi
       ;;
     *)
       printf "no\n" > "$_oh_my_exegol_choice_file"
-      _oh_my_exegol_log_info "Skipping important tools update"
       ;;
   esac
 
   rm -f "$_oh_my_exegol_prompt_file"
 }
 
-_oh_my_exegol_prompt_important_tools_update
+_oh_my_exegol_run_important_tools_update_choice() {
+  local update_failed=0
 
+  if [[ "$_oh_my_exegol_update_choice_asked" -ne 1 || ! -f "$_oh_my_exegol_choice_file" ]]; then
+    return
+  fi
+
+  if [[ "$(cat "$_oh_my_exegol_choice_file")" != "yes" ]]; then
+    _oh_my_exegol_log_info "Skipping important tools update"
+    return
+  fi
+
+  : > "$_oh_my_exegol_log_file"
+
+  _oh_my_exegol_log_info "Important tools update output will be saved to $_oh_my_exegol_log_file"
+  _oh_my_exegol_log_to_file "Important tools update output"
+
+  if command -v apt-get >/dev/null 2>&1; then
+    if ! _oh_my_exegol_run_with_spinner "apt update" _oh_my_exegol_apt_update; then
+      update_failed=1
+    fi
+  else
+    _oh_my_exegol_log_warn "apt is not available, skipping apt update"
+    _oh_my_exegol_log_to_file "apt is not available, skipping apt update"
+  fi
+
+  if command -v apt-get >/dev/null 2>&1; then
+    if ! _oh_my_exegol_run_with_spinner "apt upgrade" _oh_my_exegol_apt_upgrade; then
+      update_failed=1
+    fi
+  else
+    _oh_my_exegol_log_warn "apt is not available, skipping apt upgrade"
+    _oh_my_exegol_log_to_file "apt is not available, skipping apt upgrade"
+  fi
+
+  if command -v python3 >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
+    if ! _oh_my_exegol_run_with_spinner "pip update" _oh_my_exegol_update_pip; then
+      update_failed=1
+    fi
+  else
+    _oh_my_exegol_log_warn "python3 pip is not available, skipping pip update"
+    _oh_my_exegol_log_to_file "python3 pip is not available, skipping pip update"
+  fi
+
+  if [[ ! -d "$_oh_my_exegol_netexec_dir" ]]; then
+    update_failed=1
+    _oh_my_exegol_log_error "NetExec directory not found: $_oh_my_exegol_netexec_dir"
+    _oh_my_exegol_log_to_file "NetExec directory not found: $_oh_my_exegol_netexec_dir"
+  elif ! command -v git >/dev/null 2>&1; then
+    update_failed=1
+    _oh_my_exegol_log_error "git is not available, cannot update NetExec"
+    _oh_my_exegol_log_to_file "git is not available, cannot update NetExec"
+  elif ! command -v pipx >/dev/null 2>&1; then
+    update_failed=1
+    _oh_my_exegol_log_error "pipx is not available, cannot update NetExec"
+    _oh_my_exegol_log_to_file "pipx is not available, cannot update NetExec"
+  else
+    if ! _oh_my_exegol_run_with_spinner "NetExec update" _oh_my_exegol_update_netexec; then
+      update_failed=1
+    fi
+  fi
+
+  if /opt/tools/metasploit-framework/msfupdate --help >/dev/null 2>&1; then
+    if ! _oh_my_exegol_run_with_spinner "msfupdate" _oh_my_exegol_msf_update; then
+      update_failed=1
+    fi
+  else
+    _oh_my_exegol_log_warn "msfupdate is not available, skipping msfupdate"
+    _oh_my_exegol_log_to_file "msfupdate is not available, skipping msfupdate"
+  fi
+
+  if [[ "$update_failed" -eq 0 ]]; then
+    _oh_my_exegol_log_success "Important tools update finished successfully"
+    _oh_my_exegol_log_to_file "Important tools update finished successfully"
+  else
+    _oh_my_exegol_log_error "Important tools update finished with errors"
+    _oh_my_exegol_log_to_file "Important tools update finished with errors"
+  fi
+}
+
+# Source Adaptix helpers
+_oh_my_exegol_adaptix_zsh="${${(%):-%x}:A:h}/adaptix.zsh"
+if [[ -f "$_oh_my_exegol_adaptix_zsh" ]]; then
+  source "$_oh_my_exegol_adaptix_zsh"
+fi
+
+_oh_my_exegol_prompt_important_tools_update_choice
+if (( $+functions[_adaptix_prompt_install_choice] )); then
+  _adaptix_prompt_install_choice
+fi
+
+_oh_my_exegol_run_important_tools_update_choice
+if (( $+functions[_adaptix_run_install_choice] )); then
+  _adaptix_run_install_choice
+fi
+
+unset _oh_my_exegol_adaptix_zsh
 unset _oh_my_exegol_state_dir
 unset _oh_my_exegol_prompt_file
 unset _oh_my_exegol_choice_file
 unset _oh_my_exegol_log_file
 unset _oh_my_exegol_netexec_dir
+unset _oh_my_exegol_update_choice_asked
 unset _oh_my_exegol_color_blue
 unset _oh_my_exegol_color_green
 unset _oh_my_exegol_color_yellow
 unset _oh_my_exegol_color_red
 unset _oh_my_exegol_color_reset
-unfunction _oh_my_exegol_prompt_important_tools_update
+unfunction _oh_my_exegol_prompt_important_tools_update_choice
+unfunction _oh_my_exegol_run_important_tools_update_choice
 unfunction _oh_my_exegol_log
 unfunction _oh_my_exegol_log_info
 unfunction _oh_my_exegol_log_success

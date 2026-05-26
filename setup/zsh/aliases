@@ -1,0 +1,4 @@
+alias adaptix-server='adaptixserver'
+alias adaptix-client='adaptixclient &> /dev/null &'
+
+alias tun0='ip=$(ip a sh dev tun0 | grep -oP "(?:[0-9]{1,3}\.){3}[0-9]{1,3}" | head -1) && printf "%s" "$ip" | xclip -selection clipboard && echo "tun0 ip copied: $ip"'

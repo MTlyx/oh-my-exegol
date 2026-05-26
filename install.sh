@@ -13,6 +13,7 @@ LEGACY_SYSTEM_UPDATE_MARKER_BEGIN="# BEGIN exegol-system-update-template"
 LEGACY_SYSTEM_UPDATE_MARKER_END="# END exegol-system-update-template"
 
 UNINSTALL=0
+BUILD_ADAPTIX_CLIENT=0
 
 if [[ -t 1 ]]; then
   COLOR_BLUE=$'\033[1;34m'
@@ -69,12 +70,13 @@ log_status() {
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--uninstall]
+Usage: ./install.sh [--uninstall] [--adaptix]
 
 Installs oh-my-exegol hooks into your Exegol my-resources path.
 
 Options:
   --uninstall      Remove oh-my-exegol hooks from your my-resources path
+  --adaptix        Build AdaptixClient AppImage and include it in setup
   -h, --help       Show this help
 EOF
 }
@@ -113,7 +115,7 @@ detect_my_resources_path() {
 backup_file() {
   local file_path="$1"
   if [[ -f "$file_path" ]]; then
-    cp -a "$file_path" "${file_path}.bak.${TIMESTAMP}"
+    cp "$file_path" "${file_path}.bak.${TIMESTAMP}"
     log_status "backup" "$file_path -> ${file_path}.bak.${TIMESTAMP}"
   fi
 }
@@ -135,13 +137,13 @@ copy_if_missing_or_force() {
       if [[ "$backup" -eq 1 ]]; then
         backup_file "$dst"
       fi
-      cp -a "$src" "$dst"
+      cp "$src" "$dst"
       log_status "update" "$dst"
     else
       log_status "keep" "$dst"
     fi
   else
-    cp -a "$src" "$dst"
+    cp "$src" "$dst"
     log_status "add" "$dst"
   fi
 }
@@ -149,6 +151,7 @@ copy_if_missing_or_force() {
 ensure_marker_block() {
   local file_path="$1"
   local block_content="$2"
+  local tmp_file=""
 
   mkdir -p "$(dirname "$file_path")"
 
@@ -159,7 +162,28 @@ ensure_marker_block() {
   fi
 
   if grep -Fq "$MARKER_BEGIN" "$file_path"; then
-    log_status "keep" "$file_path"
+    tmp_file="$(mktemp)"
+    awk -v begin="$MARKER_BEGIN" -v end="$MARKER_END" '
+      index($0, begin) { skipping=1; next }
+      index($0, end) { skipping=0; next }
+      !skipping { print }
+    ' "$file_path" > "$tmp_file"
+
+    if [[ -s "$tmp_file" ]] && grep -q '[^[:space:]]' "$tmp_file"; then
+      printf '\n%s\n' "$block_content" >> "$tmp_file"
+    else
+      printf '%s\n' "$block_content" > "$tmp_file"
+    fi
+
+    if cmp -s "$tmp_file" "$file_path"; then
+      rm -f "$tmp_file"
+      log_status "keep" "$file_path"
+      return
+    fi
+
+    backup_file "$file_path"
+    mv "$tmp_file" "$file_path"
+    log_status "update" "$file_path"
     return
   fi
 
@@ -253,6 +277,22 @@ remove_owned_file_if_exists() {
   fi
 }
 
+remove_file_if_matches_source() {
+  local src="$1"
+  local dst="$2"
+
+  if [[ ! -f "$dst" ]]; then
+    log_status "skip" "$dst"
+    return
+  fi
+
+  if [[ -f "$src" ]] && cmp -s "$src" "$dst"; then
+    remove_file_if_exists "$dst" 0
+  else
+    log_status "keep" "$dst"
+  fi
+}
+
 remove_owned_backup_files() {
   local file_path="$1"
   local backup_file=""
@@ -306,10 +346,47 @@ ensure_executable_if_possible() {
   fi
 }
 
+build_adaptix_client() {
+  local repo_url="https://github.com/Adaptix-Framework/AdaptixC2.git"
+  local clone_dir="${SOURCE_SETUP_DIR}/AdaptixC2"
+  local appimage_src="${clone_dir}/AdaptixClient/client-dist/AdaptixClient-x86_64.AppImage"
+  local appimage_dst="${SOURCE_SETUP_DIR}/AdaptixC2/AdaptixClient-x86_64.AppImage"
+
+  log_info "Building AdaptixClient AppImage"
+
+  if [[ -d "${clone_dir}/.git" ]]; then
+    log_info "Updating existing AdaptixC2 repo at ${clone_dir}"
+    git -C "$clone_dir" fetch --all --tags
+    git -C "$clone_dir" checkout main
+    git -C "$clone_dir" pull --ff-only
+  else
+    log_info "Cloning AdaptixC2 into ${clone_dir}"
+    mkdir -p "$(dirname "$clone_dir")"
+    git clone "$repo_url" "$clone_dir"
+    git -C "$clone_dir" checkout main
+  fi
+
+  log_info "Running make docker-build-client (this takes a while)"
+  make -C "$clone_dir" docker-build-client
+
+  if [[ ! -f "$appimage_src" ]]; then
+    log_error "AppImage not found at ${appimage_src} — build may have failed"
+    exit 1
+  fi
+
+  cp "$appimage_src" "$appimage_dst"
+  chmod +x "$appimage_dst"
+  log_success "AdaptixClient AppImage copied to ${appimage_dst}"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --uninstall)
       UNINSTALL=1
+      shift
+      ;;
+    --adaptix)
+      BUILD_ADAPTIX_CLIENT=1
       shift
       ;;
     -h|--help)
@@ -327,12 +404,31 @@ done
 TARGET_MY_RESOURCES="$(detect_my_resources_path)"
 TARGET_SETUP_DIR="$TARGET_MY_RESOURCES/setup"
 TARGET_ZSH_DIR="$TARGET_SETUP_DIR/zsh"
+TARGET_ADAPTIX_DIR="$TARGET_SETUP_DIR/AdaptixC2"
 
 LOAD_USER_SETUP_BLOCK="$(cat <<'EOF'
 # BEGIN oh-my-exegol
 mkdir -p /root/.config/oh-my-exegol
 touch /root/.config/oh-my-exegol/prompt-important-tool-updates
+rm -f /root/.config/oh-my-exegol/prompt-adaptix-install
 printf "[*] Important tools update prompt scheduled for the first interactive shell\n"
+# END oh-my-exegol
+EOF
+)"
+
+LOAD_USER_SETUP_BLOCK_WITH_CLIENT="$(cat <<'EOF'
+# BEGIN oh-my-exegol
+mkdir -p /root/.config/oh-my-exegol
+touch /root/.config/oh-my-exegol/prompt-important-tool-updates
+touch /root/.config/oh-my-exegol/prompt-adaptix-install
+printf "[*] Important tools update prompt scheduled for the first interactive shell\n"
+printf "[*] AdaptixC2 install prompt scheduled for the first interactive shell\n"
+if [[ -f /opt/my-resources/setup/AdaptixC2/AdaptixClient-x86_64.AppImage ]]; then
+  mkdir -p /opt/AdaptixC2
+  cp /opt/my-resources/setup/AdaptixC2/AdaptixClient-x86_64.AppImage /opt/AdaptixC2/AdaptixClient-x86_64.AppImage
+  chmod +x /opt/AdaptixC2/AdaptixClient-x86_64.AppImage
+  printf "[*] AdaptixClient AppImage deployed to /opt/AdaptixC2/AdaptixClient-x86_64.AppImage\n"
+fi
 # END oh-my-exegol
 EOF
 )"
@@ -359,12 +455,28 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   remove_owned_backup_files "$TARGET_ZSH_DIR/oh-my-exegol.zsh"
   remove_owned_file_if_exists "$TARGET_ZSH_DIR/system-update-prompt.zsh"
   remove_owned_backup_files "$TARGET_ZSH_DIR/system-update-prompt.zsh"
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/adaptix.zsh"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/adaptix.zsh"
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/install-adaptix.sh"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/install-adaptix.sh"
+  remove_file_if_matches_source "$SOURCE_SETUP_DIR/zsh/aliases" "$TARGET_ZSH_DIR/aliases"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/aliases"
+  remove_file_if_matches_source "$SOURCE_SETUP_DIR/zsh/history" "$TARGET_ZSH_DIR/history"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/history"
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/AdaptixClient-x86_64.AppImage"
+  remove_owned_file_if_exists "$TARGET_ADAPTIX_DIR/AdaptixClient-x86_64.AppImage"
 
   remove_dir_if_empty "$TARGET_ZSH_DIR"
+  remove_dir_if_empty "$TARGET_ADAPTIX_DIR"
   remove_dir_if_empty "$TARGET_SETUP_DIR"
 
   log_success "oh-my-exegol uninstalled"
   exit 0
+fi
+
+# Build AdaptixClient AppImage if requested
+if [[ "$BUILD_ADAPTIX_CLIENT" -eq 1 ]]; then
+  build_adaptix_client
 fi
 
 log_info "Installing oh-my-exegol"
@@ -376,14 +488,45 @@ copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/oh-my-exegol.zsh" "$TARGET_ZSH_D
 remove_marker_block_if_present "$TARGET_ZSH_DIR/zshrc" "$LEGACY_SYSTEM_UPDATE_MARKER_BEGIN" "$LEGACY_SYSTEM_UPDATE_MARKER_END"
 remove_owned_file_if_exists "$TARGET_ZSH_DIR/system-update-prompt.zsh"
 
+# Copy Adaptix files only when requested.
+if [[ "$BUILD_ADAPTIX_CLIENT" -eq 1 ]]; then
+  copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/adaptix.zsh" "$TARGET_ZSH_DIR/adaptix.zsh" 1 0
+  copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/install-adaptix.sh" "$TARGET_ZSH_DIR/install-adaptix.sh" 1 0
+  copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/aliases" "$TARGET_ZSH_DIR/aliases" 1 0
+  copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/history" "$TARGET_ZSH_DIR/history" 1 0
+  copy_if_missing_or_force \
+    "$SOURCE_SETUP_DIR/AdaptixC2/AdaptixClient-x86_64.AppImage" \
+    "$TARGET_ADAPTIX_DIR/AdaptixClient-x86_64.AppImage" 1 0
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/AdaptixClient-x86_64.AppImage"
+else
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/adaptix.zsh"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/adaptix.zsh"
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/install-adaptix.sh"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/install-adaptix.sh"
+  remove_file_if_matches_source "$SOURCE_SETUP_DIR/zsh/aliases" "$TARGET_ZSH_DIR/aliases"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/aliases"
+  remove_file_if_matches_source "$SOURCE_SETUP_DIR/zsh/history" "$TARGET_ZSH_DIR/history"
+  remove_owned_backup_files "$TARGET_ZSH_DIR/history"
+  remove_owned_file_if_exists "$TARGET_ZSH_DIR/AdaptixClient-x86_64.AppImage"
+  remove_owned_file_if_exists "$TARGET_ADAPTIX_DIR/AdaptixClient-x86_64.AppImage"
+  remove_dir_if_empty "$TARGET_ADAPTIX_DIR"
+fi
+
 if [[ -f "$TARGET_SETUP_DIR/load_user_setup.sh" ]]; then
   remove_legacy_system_update_load_user_if_owned "$TARGET_SETUP_DIR/load_user_setup.sh"
 fi
 
-if [[ -f "$TARGET_SETUP_DIR/load_user_setup.sh" ]]; then
-  ensure_marker_block "$TARGET_SETUP_DIR/load_user_setup.sh" "$LOAD_USER_SETUP_BLOCK"
+# Use the block with Adaptix deploy only when requested.
+if [[ "$BUILD_ADAPTIX_CLIENT" -eq 1 ]]; then
+  _load_block="$LOAD_USER_SETUP_BLOCK_WITH_CLIENT"
 else
-  copy_if_missing_or_force "$SOURCE_SETUP_DIR/load_user_setup.sh" "$TARGET_SETUP_DIR/load_user_setup.sh" 1
+  _load_block="$LOAD_USER_SETUP_BLOCK"
+fi
+
+if [[ -f "$TARGET_SETUP_DIR/load_user_setup.sh" ]]; then
+  ensure_marker_block "$TARGET_SETUP_DIR/load_user_setup.sh" "$_load_block"
+else
+  ensure_marker_block "$TARGET_SETUP_DIR/load_user_setup.sh" "$_load_block"
 fi
 
 ensure_marker_block "$TARGET_ZSH_DIR/zshrc" "$ZSHRC_BLOCK"

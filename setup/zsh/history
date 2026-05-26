@@ -1,0 +1,2 @@
+adaptixserver
+adaptixclient &> /dev/null &
