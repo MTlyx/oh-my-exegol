@@ -1,2 +1,4 @@
 adaptixserver
 adaptixclient &> /dev/null &
+
+tun0
