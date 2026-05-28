@@ -305,6 +305,56 @@ remove_owned_backup_files() {
   shopt -u nullglob
 }
 
+merge_file_unique_lines() {
+  local src="$1"
+  local dst="$2"
+  local backup="${3:-1}"
+
+  mkdir -p "$(dirname "$dst")"
+
+  if [[ ! -f "$src" ]]; then
+    log_status "skip" "$dst"
+    return
+  fi
+
+  if [[ ! -f "$dst" ]]; then
+    cp "$src" "$dst"
+    log_status "add" "$dst"
+    return
+  fi
+
+  if cmp -s "$src" "$dst"; then
+    log_status "keep" "$dst"
+    return
+  fi
+
+  local tmp_file
+  tmp_file=$(mktemp)
+  cp "$dst" "$tmp_file"
+
+  while IFS=$'\n' read -r line || [[ -n "$line" ]]; do
+    if [[ -z "${line//[[:space:]]/}" ]]; then
+      continue
+    fi
+    if grep -Fxq -- "$line" "$dst"; then
+      continue
+    fi
+    printf '%s\n' "$line" >> "$tmp_file"
+  done < "$src"
+
+  if cmp -s "$tmp_file" "$dst"; then
+    rm -f "$tmp_file"
+    log_status "keep" "$dst"
+    return
+  fi
+
+  if [[ "$backup" -eq 1 ]]; then
+    backup_file "$dst"
+  fi
+  mv "$tmp_file" "$dst"
+  log_status "update" "$dst"
+}
+
 remove_legacy_system_update_load_user_if_owned() {
   local file_path="$1"
 
@@ -492,8 +542,8 @@ remove_owned_file_if_exists "$TARGET_ZSH_DIR/system-update-prompt.zsh"
 if [[ "$BUILD_ADAPTIX_CLIENT" -eq 1 ]]; then
   copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/adaptix.zsh" "$TARGET_ZSH_DIR/adaptix.zsh" 1 0
   copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/install-adaptix.sh" "$TARGET_ZSH_DIR/install-adaptix.sh" 1 0
-  copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/aliases" "$TARGET_ZSH_DIR/aliases" 1 0
-  copy_if_missing_or_force "$SOURCE_SETUP_DIR/zsh/history" "$TARGET_ZSH_DIR/history" 1 0
+  merge_file_unique_lines "$SOURCE_SETUP_DIR/zsh/aliases" "$TARGET_ZSH_DIR/aliases" 1
+  merge_file_unique_lines "$SOURCE_SETUP_DIR/zsh/history" "$TARGET_ZSH_DIR/history" 1
   copy_if_missing_or_force \
     "$SOURCE_SETUP_DIR/AdaptixC2/AdaptixClient-x86_64.AppImage" \
     "$TARGET_ADAPTIX_DIR/AdaptixClient-x86_64.AppImage" 1 0
